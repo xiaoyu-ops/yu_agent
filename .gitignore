@@ -1,10 +1,12 @@
 *.env
 .env
-test_the_yu_agent/.env
-yu_agent.egg-info
+tests/.env
 
+yu_agent.egg-info/
+*.egg-info/
+tests/test_the_yu_agent/
 # Python
-* __pycache__/
+__pycache__/
 *.py[cod]
 *$py.class
 *.so
@@ -24,7 +26,6 @@ parts/
 sdist/
 var/
 wheels/
-*.egg-info/
 .installed.cfg
 *.egg
 
@@ -38,7 +39,7 @@ wheels/
 
 # Test & Data
 test_rag_data/
-test_the_yu_agent/test_memory_data/
+tests/test_the_yu_agent/test_memory_data/
 memory_data/
 *.db
 *.sqlite3
@@ -47,17 +48,13 @@ memory_data/
 .claude/
 
 # Documents (temporary/generated)
-test_the_yu_agent/RAG_TEST_ANALYSIS.md
-test_the_yu_agent/TESTING_SUMMARY.md
+tests/test_the_yu_agent/RAG_TEST_ANALYSIS.md
+tests/test_the_yu_agent/TESTING_SUMMARY.md
 
 # PDF and media files in test directory
-test_the_yu_agent/*.pdf
-test_the_yu_agent/*.mp3
-test_the_yu_agent/*.wav
+tests/test_the_yu_agent/*.pdf
+tests/test_the_yu_agent/*.mp3
+tests/test_the_yu_agent/*.wav
 
 # OS
-.DS_Store
 Thumbs.db
-yu_agent/core/__pycache__
-
-yu_agent/core/__pycache__/config.cpython-310.pyc

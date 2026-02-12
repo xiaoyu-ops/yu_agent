@@ -2,6 +2,24 @@
 
 本文件为Claude Code (claude.ai/code)在本仓库工作时提供指导。
 
+### 文件读取策略
+
+**强制规则**：每次调用 Read 工具时**必须**指定 `offset` 和 `limit` 参数，禁止使用默认值。
+
+#### 参数要求
+
+| 参数   | 要求           | 说明                          |
+| ------ | -------------- | ----------------------------- |
+| `offset` | **必须指定** | 起始行号（从 0 开始）         |
+| `limit`  | **必须指定** | 读取行数，单次不超过 500 行   |
+
+#### 读取流程
+
+1. **侦察**：先用 Grep 了解文件结构，或定位目标关键词行号。
+2. **精准打击**：使用 offset + limit 精确读取目标区域。
+3. **扩展**：如果需要更多上下文，再调整 offset 继续读取。
+
+**目标**：保持上下文精准、最小化。如果不遵守，工具调用将被 Hook 拦截。
 ## 项目概述
 
 **yu_agent** 是一个学习阶段的Agent框架实现，基于《Hello Agents》教科书的设计模式，构建在OpenAI兼容API之上。它为多个LLM提供商提供统一接口，并实现了四种核心Agent推理模式：简单对话(Simple)、推理+行动(ReAct)、自我反思(Reflection)和计划求解(PlanAndSolve)。
@@ -497,17 +515,378 @@ except AgentsException as e:
     print(f"框架错误: {e}")
 ```
 
+## 8. 记忆系统架构 (Chapter 8: Memory)
+
+### 概述
+
+记忆系统实现了《Hello Agents》第8章的分层记忆架构，支持4种核心记忆类型，集成了向量和图数据库，提供统一的记忆管理接口。
+
+**分层架构**：
+```
+┌─────────────────────────────────────────┐
+│   记忆管理器 (MemoryManager)             │ ← 统一入口
+├─────────────────────────────────────────┤
+│ 工作│情景│语义│感知                       │ ← 4种记忆类型
+│Working│Episodic│Semantic│Perceptual   │
+├─────────────────────────────────────────┤
+│ 嵌入模型(Embedding Provider)            │ ← 统一向量提供
+│ DashScope | Local | TF-IDF             │
+├─────────────────────────────────────────┤
+│ SQLite | Qdrant | Neo4j | 内存缓存    │ ← 多层存储
+└─────────────────────────────────────────┘
+```
+
+### 4种记忆类型对比
+
+| 特性 | 工作(Working) | 情景(Episodic) | 语义(Semantic) | 感知(Perceptual) |
+|------|------------|------------|------------|------------|
+| **用途** | 会话上下文 | 用户交互历史 | 知识/概念 | 多模态感知 |
+| **时效** | 短期(分钟) | 中期(天周) | 长期(永久) | 短期 |
+| **存储** | 内存 | SQLite+向量 | Neo4j+向量 | 灵活 |
+| **容量** | 10-100项 | 无限 | 无限 | 无限 |
+| **检索** | TF-IDF+衰减 | 向量+时间 | 向量+图 | 灵活 |
+| **数据结构** | 堆队列 | 事件+会话 | 实体+关系 | 灵活 |
+
+### 快速开始
+
+#### 基础使用
+
+```python
+from yu_agent import MemoryManager, MemoryConfig
+
+# 1. 初始化配置
+config = MemoryConfig(
+    storage_path="./memory_data",
+    max_capacity=1000,
+    importance_threshold=0.1
+)
+
+# 2. 创建管理器
+manager = MemoryManager(config, user_id="user_123")
+
+# 3. 添加记忆
+memory_id = manager.add_memory(
+    content="用户提到喜欢Python编程",
+    memory_type="semantic",  # 自动分类或显式指定
+    importance=0.8,
+    metadata={"tags": ["用户偏好", "编程"]}
+)
+
+# 4. 检索记忆
+results = manager.retrieve_memories(
+    query="用户擅长什么编程语言",
+    memory_types=["semantic"],  # 可指定类型或全部
+    limit=5,
+    min_importance=0.3
+)
+
+# 5. 统计和管理
+stats = manager.get_memory_stats()
+print(f"记忆总数: {stats['total_memories']}")
+print(f"各类型分布: {stats['memories_by_type']}")
+
+# 6. 遗忘机制
+forgotten_count = manager.forget_memories(
+    strategy="importance_based",
+    threshold=0.2  # 删除重要性<0.2的记忆
+)
+
+# 7. 记忆整合
+consolidated = manager.consolidate_memories(
+    from_type="working",    # 从工作记忆
+    to_type="episodic",     # 转移到情景记忆
+    importance_threshold=0.7  # 只转移重要记忆
+)
+```
+
+#### 工作记忆示例（会话对话）
+
+```python
+from yu_agent import WorkingMemory, MemoryConfig, MemoryItem
+from datetime import datetime
+
+config = MemoryConfig(working_memory_capacity=10)
+working_mem = WorkingMemory(config)
+
+# 添加对话内容
+msg1 = MemoryItem(
+    id="msg1",
+    content="用户问了关于Python的问题",
+    memory_type="working",
+    user_id="user1",
+    timestamp=datetime.now(),
+    importance=0.7
+)
+
+working_mem.add(msg1)
+
+# 检索相关内容
+results = working_mem.retrieve("Python", limit=5)
+print(f"相关记忆: {len(results)}")
+
+# 获取上下文摘要（用于提示词）
+summary = working_mem.get_context_summary(max_length=500)
+print(f"对话上下文:\n{summary}")
+```
+
+#### 情景记忆示例（交互历史）
+
+```python
+from yu_agent import EpisodicMemory, MemoryConfig, MemoryItem
+from datetime import datetime
+
+config = MemoryConfig(storage_path="./memory_data")
+episodic = EpisodicMemory(config)
+
+# 添加交互事件
+memory = MemoryItem(
+    id="event1",
+    content="用户成功完成了数据分析任务",
+    memory_type="episodic",
+    user_id="user1",
+    timestamp=datetime.now(),
+    importance=0.8,
+    metadata={
+        "session_id": "session_001",
+        "context": {"task_type": "分析", "domain": "数据"},
+        "outcome": "成功",
+        "participants": ["user1", "assistant"]
+    }
+)
+
+episodic.add(memory)
+
+# 按会话检索
+session_episodes = episodic.get_session_episodes("session_001")
+
+# 发现行为模式
+patterns = episodic.find_patterns(user_id="user1", min_frequency=2)
+
+# 时间线视图
+timeline = episodic.get_timeline(user_id="user1", limit=20)
+```
+
+#### 语义记忆示例（知识库）
+
+```python
+from yu_agent import SemanticMemory, MemoryConfig, MemoryItem
+from datetime import datetime
+
+config = MemoryConfig(storage_path="./memory_data")
+semantic = SemanticMemory(config)
+
+# 添加知识
+knowledge = MemoryItem(
+    id="concept1",
+    content="Python是一种高级编程语言，具有简洁的语法和强大的生态系统",
+    memory_type="semantic",
+    user_id="user1",
+    timestamp=datetime.now(),
+    importance=0.9,
+    metadata={
+        "tags": ["编程", "Python"],
+        "category": "编程语言"
+    }
+)
+
+semantic.add(knowledge)
+
+# 混合检索（向量+图）
+results = semantic.retrieve("编程语言特性", limit=10)
+
+# 实体搜索
+entities = semantic.search_entities("Python", limit=5)
+
+# 获取相关概念
+related = semantic.get_related_entities("concept1", max_hops=2)
+
+# 导出知识图谱
+kg = semantic.export_knowledge_graph()
+```
+
+### 环境变量配置
+
+```bash
+# 嵌入模型配置
+EMBED_MODEL_TYPE=dashscope        # dashscope | local | tfidf
+EMBED_MODEL_NAME=text-embedding-v3
+EMBED_API_KEY=your_api_key
+EMBED_BASE_URL=https://api.example.com/v1  # 可选
+
+# Qdrant 向量数据库
+QDRANT_URL=http://localhost:6333  # 本地或云服务
+QDRANT_API_KEY=your_api_key       # 云服务需要
+QDRANT_COLLECTION=hello_agents_vectors
+QDRANT_VECTOR_SIZE=384
+QDRANT_DISTANCE=cosine
+
+# Neo4j 图数据库
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=your_password
+NEO4J_DATABASE=neo4j
+
+# 本地存储
+STORAGE_PATH=./memory_data
+```
+
+### 数据库部署
+
+#### Qdrant 向量数据库
+
+**Docker 部署**：
+```bash
+docker run -p 6333:6333 \
+  -e QDRANT_API_KEY=secret_key \
+  qdrant/qdrant:latest
+```
+
+#### Neo4j 图数据库
+
+**Docker 部署**：
+```bash
+docker run -p 7687:7687 \
+  -e NEO4J_AUTH=neo4j/password \
+  neo4j:latest
+```
+
+### 与Agent的集成
+
+```python
+from yu_agent import SimpleAgent, MemoryManager, MemoryConfig, AgentsLLM
+
+# 创建记忆系统
+memory_config = MemoryConfig(storage_path="./memory_data")
+memory = MemoryManager(memory_config, user_id="user_123")
+
+# 创建Agent
+llm = AgentsLLM()
+agent = SimpleAgent("助手", llm)
+
+# 集成记忆
+for interaction in user_interactions:
+    # 添加用户消息到记忆
+    memory.add_memory(
+        content=interaction["user_message"],
+        memory_type="episodic",
+        metadata={"role": "user"}
+    )
+
+    # Agent生成回复
+    response = agent.run(interaction["user_message"])
+
+    # 添加Agent回复到记忆
+    memory.add_memory(
+        content=response,
+        memory_type="episodic",
+        metadata={"role": "assistant"}
+    )
+
+    # 定期检索相关历史
+    history = memory.retrieve_memories(
+        query=interaction["user_message"],
+        limit=5
+    )
+
+    # 可以将历史作为上下文传递给Agent
+    context = "\n".join([h.content for h in history])
+```
+
+### 高级功能
+
+#### 1. 记忆衰减
+
+```python
+# 基于时间的衰减
+manager.forget_memories(
+    strategy="time_based",
+    max_age_days=30  # 删除30天前的记忆
+)
+```
+
+#### 2. 容量管理
+
+```python
+# 基于容量清理
+manager.forget_memories(
+    strategy="capacity_based"  # 自动删除超容量的低优先级记忆
+)
+```
+
+#### 3. 记忆检索调优
+
+```python
+# 检索参数调优
+results = manager.retrieve_memories(
+    query="用户问题",
+    memory_types=["episodic", "semantic"],  # 多类型检索
+    limit=10,
+    min_importance=0.5,  # 只返回重要度≥0.5的
+    time_range=(start_date, end_date)  # 时间范围过滤
+)
+```
+
+#### 4. 知识图谱分析
+
+```python
+# 查看完整的知识图谱
+kg_data = semantic.export_knowledge_graph()
+print(f"实体总数: {len(kg_data['entities'])}")
+print(f"关系总数: {len(kg_data['relations'])}")
+
+# 使用Neo4j的高级图查询
+related_entities = semantic.get_related_entities(
+    entity_id="concept1",
+    max_hops=3  # 最多3跳
+)
+```
+
+### 性能考虑
+
+| 操作 | 复杂度 | 建议 |
+|------|--------|------|
+| 添加记忆 | O(1) | 任意量 |
+| 向量检索 | O(log n) | 高效 |
+| 图遍历 | O(n) | 限制深度 |
+| 清理 | O(n) | 异步执行 |
+
 ## Chapter8内存模块的集成点
 
-Chapter8内存模块应该钩入以下位置：
+记忆系统与Agent框架的集成：
 
 1. **Agent历史访问**：`agent.get_history()`返回`list[Message]`
 2. **消息添加**：每次交互时调用`agent.add_message(Message)`
-3. **Agent初始化**：在第一次`run()`前加载持久化历史
-4. **消息序列化**：使用`message.to_dict()`存储
-5. **配置集成**：通过`config`参数传递内存后端
+3. **记忆持久化**：使用`MemoryManager.add_memory()`存储交互
+4. **上下文增强**：从记忆检索相关历史作为Agent上下文
+5. **会话管理**：通过`session_id`组织相关记忆
 
-**关键挑战**：当前`Agent`基类有`_history`属性(私有)，但`SimpleAgent`引用`self.history` - 需要验证此实现细节。
+**实现模式**：
+
+```python
+# Agent + Memory 集成模板
+class AgentWithMemory:
+    def __init__(self, agent, memory_manager):
+        self.agent = agent
+        self.memory = memory_manager
+
+    def run(self, user_input):
+        # 1. 检索相关历史
+        history = self.memory.retrieve_memories(
+            query=user_input, limit=5
+        )
+
+        # 2. 构建上下文提示
+        context = self._build_context(history)
+
+        # 3. Agent处理
+        response = self.agent.run(context + user_input)
+
+        # 4. 保存到记忆
+        self.memory.add_memory(user_input, metadata={"role": "user"})
+        self.memory.add_memory(response, metadata={"role": "assistant"})
+
+        return response
+```
 
 ## 依赖列表
 
@@ -517,10 +896,40 @@ Chapter8内存模块应该钩入以下位置：
 - `tavily==1.1.0` - 网络搜索API客户端
 - `serpapi==0.1.5` - Google搜索API客户端
 
+**记忆系统依赖**：
+- `python-dotenv>=1.0.0` - 环境变量管理
+- `qdrant-client>=2.7.0` - Qdrant向量数据库客户端
+- `neo4j>=5.13.0` - Neo4j图数据库驱动
+- `scikit-learn>=1.3.0` - TF-IDF检索和数据处理
+
+**嵌入模型（可选但推荐）**：
+- `sentence-transformers>=2.2.0` - 本地文本嵌入
+- `dashscope>=1.0.0` - 阿里通义千问嵌入（国内推荐）
+
+**NLP处理（可选，用于语义记忆）**：
+- `spacy>=3.7.0` - 自然语言处理
+  - 需要模型：`python -m spacy download zh_core_web_sm` (中文)
+  - `python -m spacy download en_core_web_sm` (英文)
+
 **可选**：
 - `google_search_results==2.4.2` - 替代Google搜索
 
 **Python**：>= 3.10(需要现代类型提示)
+
+### 安装记忆系统依赖
+
+```bash
+# 完整安装（包含所有可选依赖）
+pip install -e ".[memory]"
+
+# 或手动安装
+pip install python-dotenv qdrant-client neo4j scikit-learn
+pip install sentence-transformers dashscope spacy
+
+# 下载spaCy模型
+python -m spacy download zh_core_web_sm  # 中文
+python -m spacy download en_core_web_sm  # 英文
+```
 
 ## 环境配置(快速参考)
 

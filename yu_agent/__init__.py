@@ -20,8 +20,21 @@ from .agents.plan_solve_agent import PlanAndSolveAgent
 from .tools.registry import ToolRegistry, global_registry
 from .tools.builtin.search import SearchTool, search
 from .tools.builtin.calculator import CalculatorTool, calculate
+from .tools.builtin.rag_tool import RAGTool
 from .tools.chain import ToolChain, ToolChainManager
 from .tools.async_executor import AsyncToolExecutor
+
+# 记忆系统
+from .memory import (
+    MemoryManager,
+    MemoryItem,
+    MemoryConfig,
+    BaseMemory,
+    WorkingMemory,
+    EpisodicMemory,
+    SemanticMemory,
+    PerceptualMemory,
+)
 
 __all__ = [
     # 版本信息
@@ -49,8 +62,20 @@ __all__ = [
     "search",
     "CalculatorTool",
     "calculate",
+    "RAGTool",
     "ToolChain",
     "ToolChainManager",
     "AsyncToolExecutor",
+
+    # 记忆系统
+    "MemoryManager",
+    "MemoryItem",
+    "MemoryConfig",
+    "BaseMemory",
+    "WorkingMemory",
+    "EpisodicMemory",
+    "SemanticMemory",
+    "PerceptualMemory",
 ]
+
 

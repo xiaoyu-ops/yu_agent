@@ -1,2 +1,63 @@
 *.env
 .env
+test_the_yu_agent/.env
+yu_agent.egg-info
+
+# Python
+* __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test & Data
+test_rag_data/
+test_the_yu_agent/test_memory_data/
+memory_data/
+*.db
+*.sqlite3
+
+# Claude Code
+.claude/
+
+# Documents (temporary/generated)
+test_the_yu_agent/RAG_TEST_ANALYSIS.md
+test_the_yu_agent/TESTING_SUMMARY.md
+
+# PDF and media files in test directory
+test_the_yu_agent/*.pdf
+test_the_yu_agent/*.mp3
+test_the_yu_agent/*.wav
+
+# OS
+.DS_Store
+Thumbs.db
+yu_agent/core/__pycache__
+
+yu_agent/core/__pycache__/config.cpython-310.pyc

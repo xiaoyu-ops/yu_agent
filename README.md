@@ -10,9 +10,10 @@
 
 - 🤖 **多种Agent模式**：Simple(简单对话) / ReAct(推理+行动) / Reflection(自我反思) / PlanAndSolve(计划求解)
 - 🌐 **8+个LLM提供商支持**：OpenAI / DeepSeek / Qwen / ModelScope / Kimi / Zhipu / Ollama / vLLM
-- 🔌 **灵活工具系统**：内置计算器和搜索工具，支持自定义工具扩展
+- 🔌 **灵活工具系统**：内置计算器、搜索工具和RAG工具，支持自定义工具扩展
 - 🔄 **流式响应支持**：实时流式输出，更好的用户体验
-- 🧠 **记忆管理**：内置对话历史管理，支持扩展持久化存储
+- 🧠 **完整记忆系统**：4种记忆类型(工作/情景/语义/感知) + 多数据库支持(SQLite/Qdrant/Neo4j)
+- 📚 **RAG检索增强生成**：支持多格式文档、智能检索、向量化存储、增强问答
 - ⚡ **异步执行**：支持工具并发执行和流水线组合
 
 ## 🚀 快速开始
@@ -297,6 +298,39 @@ result = search("Python最新版本")
 # 自动选择: Tavily API(首选) > SerpAPI(备选)
 ```
 
+**RAG (检索增强生成)**
+```python
+from yu_agent.tools.builtin.rag_tool import RAGTool
+
+# 初始化RAG工具
+rag = RAGTool(
+    knowledge_base_path="./knowledge_base",
+    collection_name="my_rag",
+    rag_namespace="default"
+)
+
+# 添加文档（支持PDF、Word、Excel等多格式）
+rag.add_document("report.pdf")
+
+# 添加文本
+rag.add_text("Python是一种高级编程语言...")
+
+# 智能问答 - 自动检索+LLM生成答案
+answer = rag.ask("什么是Python？")
+
+# 知识库搜索
+results = rag.search("编程语言", limit=5)
+
+# 查看统计信息
+stats = rag.run({"action": "stats"})
+
+# 批量添加文档
+rag.add_documents_batch(["file1.pdf", "file2.pdf"])
+
+# 清空知识库
+rag.run({"action": "clear", "confirm": True})
+```
+
 #### 自定义工具
 
 ```python
@@ -431,6 +465,111 @@ llm = AgentsLLM(temperature=0.3, max_tokens=1000)
 agent = SimpleAgent("助手", llm, config=config)
 ```
 
+### 记忆系统
+
+yu_agent提供完整的分层记忆系统，支持4种核心记忆类型和多种存储后端。
+
+#### 快速开始
+
+```python
+from yu_agent import MemoryManager, MemoryConfig
+
+# 创建记忆配置
+config = MemoryConfig(
+    storage_path="./memory_data",
+    max_capacity=1000,
+    importance_threshold=0.1
+)
+
+# 创建记忆管理器
+manager = MemoryManager(config, user_id="user_123")
+
+# 添加记忆
+memory_id = manager.add_memory(
+    content="用户信息：Alice是一名Python开发者",
+    memory_type="semantic",  # 自动分类或显式指定
+    importance=0.8,
+    metadata={"tags": ["用户", "开发者"]}
+)
+
+# 检索记忆
+results = manager.retrieve_memories(
+    query="Alice的职业",
+    limit=5,
+    min_importance=0.3
+)
+
+for memory in results:
+    print(f"内容: {memory.content}")
+    print(f"重要性: {memory.importance}")
+
+# 统计信息
+stats = manager.get_memory_stats()
+print(f"总记忆数: {stats['total_memories']}")
+```
+
+#### 4种记忆类型
+
+| 类型 | 用途 | 存储 | 时效 |
+|------|------|------|------|
+| WorkingMemory | 会话上下文 | 内存 | 分钟级 |
+| EpisodicMemory | 交互历史 | SQLite + Qdrant | 天/周级 |
+| SemanticMemory | 知识/概念 | Neo4j + Qdrant | 永久 |
+| PerceptualMemory | 多模态感知 | 灵活 | 可配置 |
+
+#### 高级功能
+
+```python
+# 记忆遗忘策略
+forgotten = manager.forget_memories(
+    strategy="importance_based",  # 基于重要性
+    threshold=0.2  # 删除重要性 < 0.2 的记忆
+)
+
+# 或时间基础
+forgotten = manager.forget_memories(
+    strategy="time_based",
+    max_age_days=30  # 删除30天前的记忆
+)
+
+# 记忆整合：从短期到长期
+consolidated = manager.consolidate_memories(
+    from_type="working",
+    to_type="episodic",
+    importance_threshold=0.7
+)
+
+# 多类型混合检索
+results = manager.retrieve_memories(
+    query="用户问题",
+    memory_types=["episodic", "semantic"],  # 多种类型
+    limit=10,
+    min_importance=0.5
+)
+```
+
+#### 环境配置
+
+```bash
+# 嵌入模型（可选）
+EMBED_MODEL_TYPE=dashscope
+EMBED_MODEL_NAME=text-embedding-v3
+EMBED_API_KEY=your_key
+
+# Qdrant向量数据库
+QDRANT_URL=http://localhost:6333
+QDRANT_API_KEY=your_key
+QDRANT_COLLECTION=memories
+
+# Neo4j图数据库
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=password
+
+# 本地存储
+STORAGE_PATH=./memory_data
+```
+
 #### 错误处理
 
 ```python
@@ -452,13 +591,37 @@ except Exception as e:
 
 ## 📦 依赖
 
+**核心依赖**：
 ```
-openai==2.18.0          # LLM客户端
-pydantic==2.12.5        # 数据验证
-tavily==1.1.0           # 搜索API
-serpapi==0.1.5          # 备选搜索API
+openai==2.18.0              # LLM客户端
+pydantic==2.12.5            # 数据验证
+tavily==1.1.0               # 搜索API
+serpapi==0.1.5              # 备选搜索API
 google_search_results==2.4.2  # Google搜索(可选)
-python-dotenv           # 环境变量加载
+python-dotenv               # 环境变量加载
+```
+
+**记忆系统依赖**（可选）：
+```
+qdrant-client>=2.7.0        # 向量数据库
+neo4j>=5.13.0               # 图数据库
+scikit-learn>=1.3.0         # TF-IDF检索
+sentence-transformers>=2.2.0  # 文本嵌入（可选）
+dashscope>=1.0.0            # 阿里通义千问（可选）
+spacy>=3.7.0                # NLP处理（可选）
+```
+
+**快速安装**：
+```bash
+# 仅核心功能
+pip install -e .
+
+# 完整功能（包括记忆和RAG）
+pip install -e ".[memory]"
+
+# 或手动安装
+pip install qdrant-client neo4j spacy sentence-transformers
+python -m spacy download zh_core_web_sm  # 中文NLP模型
 ```
 
 ## 🏗️ 项目结构

@@ -1,7 +1,8 @@
 *.env
 .env
+*.pdf
 tests/.env
-
+dist/
 yu_agent.egg-info/
 *.egg-info/
 tests/test_the_yu_agent/

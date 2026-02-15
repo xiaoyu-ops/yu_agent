@@ -25,18 +25,24 @@ classifiers = [
 ]
 
 dependencies = [
+
     "openai==2.18.0",
-    "pydantic==2.12.5",
+    "pydantic==2.12.5",     # 保持这个版本，不要变
     "tavily==1.1.0",
     "tavily_python==0.7.19",
     "serpapi==0.1.5",
     "google_search_results==2.4.2",
     "python-dotenv>=1.0.0",
+
+    "gradio==4.44.1",          # 黄金版本：完美支持你的元组格式代码
+    "huggingface_hub==0.23.5", # 必须搭配上面的 Gradio，否则报 ImportError
+    "transformers<5.0.0",      # 限制在 5.0 以下，防止与旧版 Hub 冲突
+    "markitdown[pdf]",         # 支持 PDF 解析的高级功能
 ]
 
 [project.optional-dependencies]
 memory = [
-    "qdrant-client>=2.7.0",
+    "qdrant-client>=1.16.2",
     "neo4j>=5.13.0",
     "scikit-learn>=1.3.0",
     "sentence-transformers>=2.2.0",

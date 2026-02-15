@@ -8,7 +8,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime  # 使用标准库 datetime
 
 from ..base import Tool, ToolParameter
-from ..memory import MemoryManager, MemoryConfig
+from ...memory import MemoryManager, MemoryConfig
 
 class MemoryTool(Tool):
         """

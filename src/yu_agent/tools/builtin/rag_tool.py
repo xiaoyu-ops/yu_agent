@@ -79,12 +79,12 @@ class RAGTool(Tool):
             self.llm = AgentsLLM()
 
             self.initialized = True
-            print(f"✅ RAG工具初始化成功: namespace={self.rag_namespace}, collection={self.collection_name}")
-            
+            print(f"[OK] RAG工具初始化成功: namespace={self.rag_namespace}, collection={self.collection_name}")
+
         except Exception as e:
             self.initialized = False
             self.init_error = str(e)
-            print(f"❌ RAG工具初始化失败: {e}")
+            print(f"[ERROR] RAG工具初始化失败: {e}")
 
     def _get_pipeline(self, namespace: Optional[str] = None) -> Dict[str, Any]:
         """获取指定命名空间的 RAG 管道，若不存在则自动创建"""

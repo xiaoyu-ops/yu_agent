@@ -19,11 +19,6 @@ import logging
 注意：各记忆类型需实现统一接口（如 add/retrieve/update/remove/get_all/forget/clear/get_stats/has_memory）。
 """
 
-from typing import List, Dict, Any, Optional
-from datetime import datetime
-import uuid
-import logging
-
 from .base import MemoryItem, MemoryConfig
 from .types.working import WorkingMemory
 from .types.episodic import EpisodicMemory

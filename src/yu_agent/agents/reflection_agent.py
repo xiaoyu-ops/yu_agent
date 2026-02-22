@@ -169,8 +169,8 @@ class ReflectionAgent(Agent):
         print(f"\n--- 任务完成 ---\n最终结果:\n{final_result}")
 
         # 保存到历史记录
-        self.add_message(Message(input_text, "user"))
-        self.add_message(Message(final_result, "assistant"))
+        self.add_message(Message(content=input_text, role="user"))
+        self.add_message(Message(content=final_result, role="assistant"))
 
         return final_result
     

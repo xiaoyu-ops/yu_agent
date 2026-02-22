@@ -186,8 +186,8 @@ class PlanAndSolveAgent(Agent):
             print(f"\n--- 任务终止 ---\n{final_answer}")
             
             # 保存到历史记录
-            self.add_message(Message(input_text, "user"))
-            self.add_message(Message(final_answer, "assistant"))
+            self.add_message(Message(content=input_text, role="user"))
+            self.add_message(Message(content=final_answer, role="assistant"))
             
             return final_answer
         
@@ -196,7 +196,7 @@ class PlanAndSolveAgent(Agent):
         print(f"\n--- 任务完成 ---\n最终答案: {final_answer}")
         
         # 保存到历史记录
-        self.add_message(Message(input_text, "user"))
-        self.add_message(Message(final_answer, "assistant"))
+        self.add_message(Message(content=input_text, role="user"))
+        self.add_message(Message(content=final_answer, role="assistant"))
         
         return final_answer

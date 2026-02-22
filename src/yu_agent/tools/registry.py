@@ -60,6 +60,23 @@ class ToolRegistry:
         else:
             print(f"工具 '{name}' 不存在。")
 
+    def unregister_tool(self, name: str) -> bool:
+        """注销工具（别名方法，用于兼容性）
+
+        Args:
+            name: 工具名称
+
+        Returns:
+            是否成功注销
+        """
+        if name in self._tools:
+            del self._tools[name]
+            return True
+        elif name in self._functions:
+            del self._functions[name]
+            return True
+        return False
+
     def get_tool(self, name: str) -> Optional[Tool]:
         """获取Tool对象"""
         return self._tools.get(name)

@@ -1,7 +1,7 @@
 """ReAct Agent实现 - 推理与行动结合的智能体"""
 
 import re
-from typing import Optional, List, Dict, Any, Tuple, Union
+from typing import Optional, List, Tuple
 from ..core.agent import Agent
 from ..core.llm import AgentsLLM
 from ..core.config import Config
@@ -15,18 +15,33 @@ DEFAULT_REACT_PROMPT = """你是一个具备推理和行动能力的AI助手。�
 {tools}
 
 ## 工作流程
-请严格按照以下格式进行回应，每次只能执行一个步骤：
+请严格按照以下格式进行回应，每次必须执行以下步骤：
 
-**Thought:** 分析当前问题，思考需要什么信息或采取什么行动。
-**Action:** 选择一个行动，格式必须是以下之一：
-- `{{tool_name}}[{{tool_input}}]` - 调用指定工具
-- `Finish[最终答案]` - 当你有足够信息给出最终答案时
+1. 首先，进行深思熟虑的分析
+2. 然后，执行具体的行动
 
-## 重要提醒
-1. 每次回应必须包含Thought和Action两部分
-2. 工具调用的格式必须严格遵循：工具名[参数]
-3. 只有当你确信有足够信息回答问题时,才使用Finish
-4. 如果工具返回的信息不够，继续使用其他工具或相同工具的不同参数
+**格式要求（必须严格遵循）：**
+
+**Thought:** [你的分析和思考过程]
+
+**Action:** [必须是以下格式之一]
+- 工具调用: 工具名[参数]
+- 任务完成: Finish[最终答案]
+
+## 工具调用示例
+- 如果要使用calculator工具计算2+2，写: calculator[2+2]
+- 如果要搜索"AI新闻"，写: search[AI新闻]
+- 如果完成任务，写: Finish[这是我的最终答案]
+
+## 重要规则
+1. **必须**在每次回应中包含"Thought:"和"Action:"两部分
+2. **必须**使用上面示例的格式，不要变更格式
+3. Action部分只能是两种格式：
+   - 工具名[参数] （调用工具）
+   - Finish[答案] （完成任务）
+4. 不要创建不存在的工具名，只使用上面列出的工具
+5. 如果工具返回的信息不完整，继续使用工具获取更多信息
+6. 只有当你确信拥有足够信息来回答问题时，才使用Finish
 
 ## 当前任务
 **Question:** {question}
@@ -34,7 +49,7 @@ DEFAULT_REACT_PROMPT = """你是一个具备推理和行动能力的AI助手。�
 ## 执行历史
 {history}
 
-现在开始你的推理和行动："""
+现在开始你的推理和行动，严格遵循上面的格式："""
 
 class ReActAgent(Agent):
     """
@@ -53,7 +68,7 @@ class ReActAgent(Agent):
         self,
         name: str,
         llm: AgentsLLM,
-        tool_registry: ToolRegistry,
+        tool_registry: Optional[ToolRegistry] = None,
         system_prompt: Optional[str] = None,
         config: Optional[Config] = None,
         max_steps: int = 5,
@@ -65,20 +80,57 @@ class ReActAgent(Agent):
         Args:
             name: Agent名称
             llm: LLM实例
-            tool_registry: 工具注册表
+            tool_registry: 工具注册表（可选，如果不提供则创建空的工具注册表）
             system_prompt: 系统提示词
             config: 配置对象
             max_steps: 最大执行步数
             custom_prompt: 自定义提示词模板
         """
         super().__init__(name, llm, system_prompt, config)
-        self.tool_registry = tool_registry
+
+        # 如果没有提供tool_registry，创建一个空的
+        if tool_registry is None:
+            self.tool_registry = ToolRegistry()
+        else:
+            self.tool_registry = tool_registry
+
         self.max_steps = max_steps
         self.current_history: List[str] = []
 
         # 设置提示词模板：用户自定义优先，否则使用默认模板
         self.prompt_template = custom_prompt if custom_prompt else DEFAULT_REACT_PROMPT
-    
+
+    def add_tool(self, tool):
+        """
+        添加工具到工具注册表
+        支持MCP工具的自动展开
+
+        Args:
+            tool: 工具实例(可以是普通Tool或MCPTool)
+        """
+        # 检查是否是MCP工具
+        if hasattr(tool, 'auto_expand') and tool.auto_expand:
+            # MCP工具会自动展开为多个工具
+            if hasattr(tool, '_available_tools') and tool._available_tools:
+                for mcp_tool in tool._available_tools:
+                    # 创建包装工具
+                    from ..tools.base import Tool
+                    wrapped_tool = Tool(
+                        name=f"{tool.name}_{mcp_tool['name']}",
+                        description=mcp_tool.get('description', ''),
+                        func=lambda input_text, t=tool, tn=mcp_tool['name']: t.run({
+                            "action": "call_tool",
+                            "tool_name": tn,
+                            "arguments": {"input": input_text}
+                        })
+                    )
+                    self.tool_registry.register_tool(wrapped_tool)
+                print(f"✅ MCP工具 '{tool.name}' 已展开为 {len(tool._available_tools)} 个独立工具")
+            else:
+                self.tool_registry.register_tool(tool)
+        else:
+            self.tool_registry.register_tool(tool)
+
     def run(self, input_text: str, **kwargs) -> str:
         """
         运行ReAct Agent
@@ -93,7 +145,7 @@ class ReActAgent(Agent):
         self.current_history = []
         current_step = 0
         
-        print(f"\n{self.name} 开始处理问题: {input_text}")
+        print(f"\n🤖 {self.name} 开始处理问题: {input_text}")
         
         while current_step < self.max_steps:
             current_step += 1
@@ -113,31 +165,29 @@ class ReActAgent(Agent):
             response_text = self.llm.invoke(messages, **kwargs)
             
             if not response_text:
-                print("错误：LLM未能返回有效响应。")
+                print("❌ 错误：LLM未能返回有效响应。")
                 break
             
             # 解析输出
             thought, action = self._parse_output(response_text)
-            
+
             if thought:
-                print(f"思考: {thought}")
-            
+                print(f"🤔 思考: {thought}")
+
             if not action:
-                print("警告：未能解析出有效的Action，流程终止。")
+                print("⚠️ 警告：未能解析出有效的Action，流程终止。")
+                print(f"📝 LLM原始输出：\n{response_text}")
                 break
             
             # 检查是否完成
             if action.startswith("Finish"):
                 final_answer = self._parse_action_input(action)
-                if final_answer is None:
-                    print("警告：无法解析Finish命令的内容。")
-                    final_answer = "任务完成但无最终答案。"
-                print(f"最终答案: {final_answer}")
-
+                print(f"🎉 最终答案: {final_answer}")
+                
                 # 保存到历史记录
-                self.add_message(Message(input_text, "user"))
-                self.add_message(Message(final_answer, "assistant"))
-
+                self.add_message(Message(content=input_text, role="user"))
+                self.add_message(Message(content=final_answer, role="assistant"))
+                
                 return final_answer
             
             # 执行工具调用
@@ -146,42 +196,46 @@ class ReActAgent(Agent):
                 self.current_history.append("Observation: 无效的Action格式，请检查。")
                 continue
             
-            print(f"行动: {tool_name}[{tool_input}]")
+            print(f"🎬 行动: {tool_name}[{tool_input}]")
             
             # 调用工具
             observation = self.tool_registry.execute_tool(tool_name, tool_input)
-            print(f"观察: {observation}")
+            print(f"👀 观察: {observation}")
             
             # 更新历史
             self.current_history.append(f"Action: {action}")
             self.current_history.append(f"Observation: {observation}")
         
-        print("已达到最大步数，流程终止。")
+        print("⏰ 已达到最大步数，流程终止。")
         final_answer = "抱歉，我无法在限定步数内完成这个任务。"
         
         # 保存到历史记录
-        self.add_message(Message(input_text, "user"))
-        self.add_message(Message(final_answer, "assistant"))
+        self.add_message(Message(content=input_text, role="user"))
+        self.add_message(Message(content=final_answer, role="assistant"))
         
         return final_answer
     
     def _parse_output(self, text: str) -> Tuple[Optional[str], Optional[str]]:
-        """解析LLM输出，提取思考和行动"""
-        thought_match = re.search(r"Thought: (.*)", text)
-        action_match = re.search(r"Action: (.*)", text)
-        
+        """解析LLM输出，提取思考和行动
+
+        支持两种格式：
+        1. **Thought:** ... **Action:** ...  (Markdown加粗)
+        2. Thought: ... Action: ...  (普通格式)
+        """
+        # 尝试匹配 Markdown 格式（**Thought:** 和 **Action:**）
+        thought_match = re.search(r"\*\*Thought:\*\*\s*(.*?)(?=\*\*Action:|Action:|$)", text, re.DOTALL)
+        action_match = re.search(r"\*\*Action:\*\*\s*(.*?)(?:\n|$)", text)
+
+        # 如果没有匹配到 Markdown 格式，尝试普通格式
+        if not thought_match:
+            thought_match = re.search(r"Thought:\s*(.*?)(?=Action:|$)", text, re.DOTALL)
+
+        if not action_match:
+            action_match = re.search(r"Action:\s*(.*?)(?:\n|$)", text)
+
         thought = thought_match.group(1).strip() if thought_match else None
         action = action_match.group(1).strip() if action_match else None
-        
-        """
-            .group() 的参数决定了你拿哪一部分：
 
-            .group(0)：默认值，代表整个匹配到的字符串。
-
-            .group(1)：代表第 1 个括号里的内容。
-
-            .group(2)：代表第 2 个括号里的内容（如果有的话）。
-        """
         return thought, action
     
     def _parse_action(self, action_text: str) -> Tuple[Optional[str], Optional[str]]:
@@ -191,7 +245,7 @@ class ReActAgent(Agent):
             return match.group(1), match.group(2)
         return None, None
     
-    def _parse_action_input(self, action_text: str) -> Optional[str]:
+    def _parse_action_input(self, action_text: str) -> str:
         """解析行动输入"""
         match = re.match(r"\w+\[(.*)\]", action_text)
-        return match.group(1) if match else None
+        return match.group(1) if match else ""

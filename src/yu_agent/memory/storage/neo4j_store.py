@@ -2,6 +2,7 @@
 Neo4j图数据库存储实现
 """
 
+import os
 import logging
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
@@ -22,8 +23,8 @@ class Neo4jGraphStore:
     def __init__(
         self,
         uri: str = "bolt://localhost:7687",
-        username: str = "neo4j", 
-        password: str = "hello-agents-password",
+        username: str = "neo4j",
+        password: str = None,
         database: str = "neo4j",
         max_connection_lifetime: int = 3600,
         max_connection_pool_size: int = 50,
@@ -32,11 +33,11 @@ class Neo4jGraphStore:
     ):
         """
         初始化Neo4j图存储 (支持云API)
-        
+
         Args:
             uri: Neo4j连接URI (本地: bolt://localhost:7687, 云: neo4j+s://xxx.databases.neo4j.io)
             username: 用户名
-            password: 密码
+            password: 密码（如果为None，将从环境变量 NEO4J_PASSWORD 获取；如果都没有则抛出异常）
             database: 数据库名称
             max_connection_lifetime: 最大连接生命周期(秒)
             max_connection_pool_size: 最大连接池大小
@@ -46,7 +47,18 @@ class Neo4jGraphStore:
             raise ImportError(
                 "neo4j未安装。请运行: pip install neo4j>=5.0.0"
             )
-        
+
+        # 如果没有提供密码，从环境变量获取
+        if password is None:
+            password = os.getenv("NEO4J_PASSWORD")
+            if not password:
+                raise ValueError(
+                    "缺少Neo4j密码。请通过以下方式之一提供：\n"
+                    "1. 直接传入 password 参数\n"
+                    "2. 设置环境变量 NEO4J_PASSWORD\n"
+                    "3. 在 .env 文件中配置 NEO4J_PASSWORD"
+                )
+
         self.uri = uri
         self.username = username
         self.password = password

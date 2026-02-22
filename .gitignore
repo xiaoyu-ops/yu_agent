@@ -8,6 +8,8 @@ yu_agent.egg-info/
 tests/test_the_yu_agent/
 tests/
 data_pipeline_refactoring_notes/
+data_pipeline_refactoring_kb/
+
 # Python
 __pycache__/
 *.py[cod]

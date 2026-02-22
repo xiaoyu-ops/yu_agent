@@ -78,8 +78,7 @@ class Neo4jConfig(BaseModel):
         description="用户名"
     )
     password: str = Field(
-        default="hello-agents-password",
-        description="密码"
+        description="密码（必须通过环境变量 NEO4J_PASSWORD 提供）"
     )
     database: str = Field(
         default="neo4j",
@@ -102,11 +101,28 @@ class Neo4jConfig(BaseModel):
     
     @classmethod
     def from_env(cls) -> "Neo4jConfig":
-        """从环境变量创建配置"""
+        """从环境变量创建配置
+
+        必需的环境变量：
+        - NEO4J_PASSWORD: Neo4j 数据库密码（必须提供）
+
+        可选的环境变量（有默认值）：
+        - NEO4J_URI: 连接地址
+        - NEO4J_USERNAME: 用户名
+        - NEO4J_DATABASE: 数据库名称
+        """
+        password = os.getenv("NEO4J_PASSWORD")
+        if not password:
+            raise ValueError(
+                "缺少必需的环境变量: NEO4J_PASSWORD\n"
+                "请在 .env 文件中设置 NEO4J_PASSWORD，或通过命令行设置: "
+                "export NEO4J_PASSWORD='your-password'"
+            )
+
         return cls(
             uri=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
             username=os.getenv("NEO4J_USERNAME", "neo4j"),
-            password=os.getenv("NEO4J_PASSWORD", "hello-agents-password"),
+            password=password,
             database=os.getenv("NEO4J_DATABASE", "neo4j"),
             max_connection_lifetime=int(os.getenv("NEO4J_MAX_CONNECTION_LIFETIME", "3600")),
             max_connection_pool_size=int(os.getenv("NEO4J_MAX_CONNECTION_POOL_SIZE", "50")),
